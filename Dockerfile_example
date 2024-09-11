@@ -1,5 +1,5 @@
 # Use an official Python runtime as a parent image
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 # Set the working directory in the container
 WORKDIR /app
@@ -17,8 +17,7 @@ EXPOSE 8080
 ENV NAME World
 ENV LINODE_TOKEN "token"
 ENV SERVER_PORT 8080
-ENV NODEBALANCER_ID 123456
-ENV FIREWALL_ID 789012
+ENV FIREWALL_ID 123456
 ENV ALLOWLIST_INTERVAL_MINUTES 10
 
 

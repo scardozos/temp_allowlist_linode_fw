@@ -6,17 +6,20 @@ from linode_api4 import LinodeClient
 from linode_api4.errors import UnexpectedResponseError
 from linode_api4.objects.networking import Firewall
 
+# Initialize Flask application
 app = Flask(__name__)
+
+# Load environment variables for authentication and settings
 token = os.environ["LINODE_TOKEN"]
 client = LinodeClient(token)
 allowlist_interval_seconds = int(os.environ["ALLOWLIST_INTERVAL_MINUTES"]) * 60
 server_port = os.environ["SERVER_PORT"]
-nodebalancer_id = os.environ["NODEBALANCER_ID"]
 firewall_id = os.environ["FIREWALL_ID"]
 
 
 @app.route("/")
 def handle_get():
+    # Define the root route that will handle incoming requests
     try:
         return create_temporary_firewall_rule(
             ip_address=request.remote_addr,
@@ -31,6 +34,8 @@ def handle_get():
 
 
 def gen_firewall_rule_name():
+    # Generate a unique name for the temporary
+    # firewall rule based on the current time
     now = datetime.now()
     return (
         "temp_allowlist"
@@ -44,6 +49,8 @@ def gen_firewall_rule_name():
 def delete_temporary_firewall_rule(
     firewall: Firewall
 ):
+    # Delete the temporary firewall rule by
+    # resetting the rules to an empty state
     firewall.update_rules(
         rules=gen_empty_firewall_rule(),
     )
@@ -51,6 +58,8 @@ def delete_temporary_firewall_rule(
 
 
 def gen_empty_firewall_rule():
+    # Generate an empty firewall rule that drops
+    # all inbound traffic and allows outbound traffic
     return {
         "inbound": [],
         "outbound": [],
@@ -62,6 +71,8 @@ def gen_empty_firewall_rule():
 def gen_firewall_rule(
     ip_address: str
 ):
+    # Generate a firewall rule to allow inbound traffic
+    #  from a specific IP on HTTP/HTTPS ports (80, 443)
     return {
         'inbound': [
             {
@@ -91,6 +102,8 @@ def create_temporary_firewall_rule(
     firewall: Firewall,
     allowlist_interval_seconds: int
 ):
+    # Create a temporary firewall rule, 
+    # then schedule its deletion after the allowlist interval
     firewall.update_rules(
         rules=gen_firewall_rule(ip_address),
     )
