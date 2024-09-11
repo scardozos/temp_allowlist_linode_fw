@@ -102,7 +102,7 @@ def create_temporary_firewall_rule(
     firewall: Firewall,
     allowlist_interval_seconds: int
 ):
-    # Create a temporary firewall rule, 
+    # Create a temporary firewall rule,
     # then schedule its deletion after the allowlist interval
     firewall.update_rules(
         rules=gen_firewall_rule(ip_address),
