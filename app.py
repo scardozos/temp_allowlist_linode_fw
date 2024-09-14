@@ -38,7 +38,7 @@ def gen_firewall_rule_name():
     # firewall rule based on the current time
     now = datetime.now()
     return (
-        "temp_allowlist"
+        "tmpAllowList"
         "_"
         f"{now.hour}.{now.minute}.{now.second}"
         "_"
