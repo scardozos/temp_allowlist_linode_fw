@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "temp_allowlist_linode"
-version = "v0.1"
+version = "v0.1-hotfix"
 requires-python = ">=3.11"
 description = "Create temporary allowlist for Linode Firewall"
 readme = { file = "README.md", content-type = "text/markdown" }
