@@ -17,7 +17,7 @@ server_port = os.environ["SERVER_PORT"]
 firewall_id = os.environ["FIREWALL_ID"]
 
 
-@app.route("/")
+@app.route("/getaccess")
 def handle_get():
     # Define the root route that will handle incoming requests
     try:
