@@ -14,11 +14,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 8080
 
 # Define environment variable
-ENV NAME World
-ENV LINODE_TOKEN "token"
-ENV SERVER_PORT 8080
-ENV FIREWALL_ID 123456
-ENV ALLOWLIST_INTERVAL_MINUTES 10
+ENV LINODE_TOKEN="token"
+ENV SERVER_PORT="8080"
+ENV FIREWALL_ID="123456"
+ENV ALLOWLIST_INTERVAL_MINUTES="10"
 
 
 # Run app.py when the container launches
