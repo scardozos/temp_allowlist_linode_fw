@@ -4,9 +4,12 @@ This Flask application manages Linode firewall rules dynamically, allowing HTTP/
 
 ## Features
 
-- Temporarily allow access to Linode services for the IP address accessing the Flask app.
-- Automatically remove firewall rules after a specified time interval.
-- Customizable time intervals and settings via environment variables.
+- **Dynamic Access Control**: Temporarily allows HTTP/HTTPS access to Linode services for the requestor's IP address.
+- **Additive Rule Management**: New rules are appended to the existing firewall configuration without overwriting other rules, ensuring co-existence with permanent policies.
+- **Automatic Expiration**: Firewall rules are automatically removed after a specified time interval (default: 10 minutes).
+- **Selective Cleanup**: Only expires rules created by this application (identified by specific labels), leaving other temporary or permanent rules untouched.
+- **Auditable**: Rules include human-readable creation timestamps in their descriptions.
+- **Customizable**: Time intervals and settings are configurable via environment variables.
   
 ## Requirements
 
@@ -38,3 +41,14 @@ The script requires three arguments to be provided:
 
 ```bash
 ./scripts/deploy_img_in_host.sh 192.168.1.100 /path/to/ssh/key 8080
+```
+
+## Makefile Usage
+
+You can automate the build and deploy process using the `make push` command. You must provide the `HOST_IP`, `SSH_KEY`, and `PORT` variables.
+
+### Example
+
+```bash
+make push HOST_IP=172.233.115.22 SSH_KEY="/home/scardozo/.ssh/id_ed25519" PORT=8080
+```
