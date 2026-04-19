@@ -3,7 +3,7 @@ import threading
 from datetime import datetime
 from flask import Flask, request
 from linode_api4 import LinodeClient
-from linode_api4.errors import UnexpectedResponseError
+from linode_api4.errors import UnexpectedResponseError, ApiError
 from linode_api4.objects.networking import Firewall
 
 # Initialize Flask application
@@ -29,8 +29,15 @@ def handle_get():
             ),
             allowlist_interval_seconds=allowlist_interval_seconds
         )
+    except ApiError as e:
+        if getattr(e, "status", 500) == 401:
+            return "invalid token", 401
+        elif getattr(e, "status", 500) == 403:
+            return "permission denied", 403
+        else:
+            return f"upstream error: {str(e)}", getattr(e, "status", 500)
     except UnexpectedResponseError as e:
-        return "Internal error occurred: " + e, 500
+        return "Internal error occurred: " + str(e), 500
 
 
 def gen_firewall_rule_name():

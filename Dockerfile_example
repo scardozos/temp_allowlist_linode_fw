@@ -20,5 +20,5 @@ ENV FIREWALL_ID="123456"
 ENV ALLOWLIST_INTERVAL_MINUTES="10"
 
 
-# Run app.py when the container launches
-CMD ["python", "app.py"]
+# Run app.py using gunicorn when the container launches
+CMD ["sh", "-c", "gunicorn --access-logfile - -b 0.0.0.0:${SERVER_PORT} app:app"]
