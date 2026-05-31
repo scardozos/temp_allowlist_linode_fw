@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 from datetime import datetime
 from flask import Flask, request
 from linode_api4 import LinodeClient
@@ -15,6 +16,11 @@ client = LinodeClient(token)
 allowlist_interval_seconds = int(os.environ["ALLOWLIST_INTERVAL_MINUTES"]) * 60
 server_port = os.environ["SERVER_PORT"]
 firewall_id = os.environ["FIREWALL_ID"]
+
+# Thread safety locks and flags
+firewall_lock = threading.Lock()
+cleanup_started = False
+cleanup_lock = threading.Lock()
 
 
 @app.route("/getaccess")
@@ -61,7 +67,7 @@ def gen_firewall_rule(
         },
         'description': (
             'Allow HTTP out for ' +
-            str(allowlist_interval_seconds / 60)
+            str(int(allowlist_interval_seconds / 60))
             + ' minutes. Created at: ' +
             now.strftime("%Y-%m-%d %H:%M:%S")
         ),
@@ -71,63 +77,63 @@ def gen_firewall_rule(
     }
 
 
-def delete_temporary_firewall_rule(
-    firewall: Firewall
-):
-    # Delete the temporary firewall rule only if it has expired
-    current_rules = firewall.rules
-    inbound_rules = current_rules.inbound
+def is_rule_expired(rule: dict, current_ts: int, allowlist_interval_seconds: int) -> bool:
+    # Check if the rule is a temporary allowlist rule
+    if not rule.get('label', '').startswith("tmpAllowList_"):
+        return False
 
-    # Current time
-    now = datetime.now()
+    parts = rule['label'].split("_")
+    if len(parts) < 2:
+        return False
 
-    new_inbound_rules = []
+    try:
+        rule_timestamp = int(parts[1])
+        diff = current_ts - rule_timestamp
+        return diff >= allowlist_interval_seconds
+    except ValueError:
+        return False
 
-    for rule_obj in inbound_rules:
-        # Convert object to dict to safely access fields and modify
-        rule = rule_to_dict(rule_obj)
 
-        # Check if the rule is a temporary allowlist rule
-        if rule.get('label', '').startswith("tmpAllowList_"):
-            parts = rule['label'].split("_")
-            if len(parts) >= 2:
-                try:
-                    rule_timestamp = int(parts[1])
-
-                    # Calculate difference in seconds
-                    # We use timestamp() to compare with unix timestamp
-                    current_ts = int(now.timestamp())
-                    diff = current_ts - rule_timestamp
-
-                    if diff < allowlist_interval_seconds:
-                        # Rule is still valid, keep it
-                        new_inbound_rules.append(rule)
-                    else:
-                        print(f"Deleting expired rule: {rule.get('label')}")
-                except ValueError:
-                    # If parsing fails, keep the rule to be safe
-                    new_inbound_rules.append(rule)
-            else:
-                new_inbound_rules.append(rule)
-        else:
-            # Keep non-temporary rules
-            new_inbound_rules.append(rule)
-
-    # Prepare the rules dict for update
-    # We need to preserve outbound rules as well
+def build_updated_rules(
+    current_rules,
+    new_inbound_rules: list
+) -> dict:
     outbound_rules = [rule_to_dict(r) for r in current_rules.outbound]
-
-    new_rules = {
+    return {
         "inbound": new_inbound_rules,
         "outbound": outbound_rules,
         "inbound_policy": current_rules.inbound_policy,
         "outbound_policy": current_rules.outbound_policy
     }
 
-    firewall.update_rules(
-        rules=new_rules,
-    )
-    print("Cleaned up firewall rules")
+
+def delete_temporary_firewall_rule(
+    firewall: Firewall
+):
+    # Delete the temporary firewall rule only if it has expired
+    with firewall_lock:
+        current_rules = firewall.rules
+        current_ts = int(datetime.now().timestamp())
+
+        new_inbound_rules = []
+        any_deleted = False
+
+        for rule_obj in current_rules.inbound:
+            rule = rule_to_dict(rule_obj)
+            if is_rule_expired(rule, current_ts, allowlist_interval_seconds):
+                print(f"Deleting expired rule: {rule.get('label')}")
+                any_deleted = True
+            else:
+                new_inbound_rules.append(rule)
+
+        if any_deleted:
+            new_rules = build_updated_rules(current_rules, new_inbound_rules)
+            firewall.update_rules(
+                rules=new_rules,
+            )
+            print("Cleaned up expired firewall rules")
+        else:
+            print("No expired firewall rules to clean up")
 
 
 def rule_to_dict(rule):
@@ -161,43 +167,66 @@ def create_temporary_firewall_rule(
 ):
     # Create a temporary firewall rule,
     # then schedule its deletion after the allowlist interval
+    with firewall_lock:
+        # Get the current rules
+        current_rules = firewall.rules
+        current_ts = int(datetime.now().timestamp())
 
-    # Get the current rules
-    current_rules = firewall.rules
+        # Convert existing inbound rules to dicts, filtering out expired ones
+        inbound_rules = []
+        for rule_obj in current_rules.inbound:
+            rule = rule_to_dict(rule_obj)
+            if is_rule_expired(rule, current_ts, allowlist_interval_seconds):
+                print(f"Cleaning up expired rule on creation: {rule.get('label')}")
+            else:
+                inbound_rules.append(rule)
 
-    # Convert existing inbound rules to dicts
-    inbound_rules = [rule_to_dict(r) for r in current_rules.inbound]
+        # Append the new rule
+        inbound_rules.append(gen_firewall_rule(ip_address))
 
-    # Append the new rule
-    inbound_rules.append(gen_firewall_rule(ip_address))
+        new_rules = build_updated_rules(current_rules, inbound_rules)
+        firewall.update_rules(
+            rules=new_rules,
+        )
 
-    # Preserve outbound rules
-    outbound_rules = [rule_to_dict(r) for r in current_rules.outbound]
+        timer = threading.Timer(
+            allowlist_interval_seconds,
+            delete_temporary_firewall_rule,
+            [firewall]
+        )
 
-    new_rules = {
-        "inbound": inbound_rules,
-        "outbound": outbound_rules,
-        "inbound_policy": current_rules.inbound_policy,
-        "outbound_policy": current_rules.outbound_policy
-    }
+        timer.start()
 
-    firewall.update_rules(
-        rules=new_rules,
-    )
+        return (
+            "IP allowlisted successfully for "
+            + str(int(allowlist_interval_seconds / 60))
+            + " minutes"
+        )
 
-    timer = threading.Timer(
-        allowlist_interval_seconds,
-        delete_temporary_firewall_rule,
-        [firewall]
-    )
 
-    timer.start()
+def periodic_cleanup_loop():
+    print("Starting periodic firewall cleanup thread...")
+    while True:
+        try:
+            firewall = Firewall(client, firewall_id)
+            delete_temporary_firewall_rule(firewall)
+        except Exception as e:
+            print(f"Error in periodic firewall cleanup: {e}")
+        time.sleep(300)  # check every 5 minutes
 
-    return (
-        "IP allowlisted successfully for "
-        + str(allowlist_interval_seconds / 60)
-        + "minutes"
-    )
+
+def start_periodic_cleanup():
+    global cleanup_started
+    with cleanup_lock:
+        if not cleanup_started:
+            thread = threading.Thread(target=periodic_cleanup_loop, daemon=True)
+            thread.start()
+            cleanup_started = True
+
+
+@app.before_request
+def before_request():
+    start_periodic_cleanup()
 
 
 if __name__ == "__main__":
