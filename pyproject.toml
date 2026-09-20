@@ -12,7 +12,8 @@ license = { file = "LICENSE" }
 authors = [{ name = "scardozos" }]
 dependencies = [
     'flask',
-    'linode_api4'
+    'linode_api4',
+    'python-json-logger'
 ]
 
 [project.urls]

@@ -18,7 +18,8 @@ ENV LINODE_TOKEN="token"
 ENV SERVER_PORT="8080"
 ENV FIREWALL_ID="123456"
 ENV ALLOWLIST_INTERVAL_MINUTES="10"
+ENV LOG_LEVEL="INFO"
 
 
 # Run app.py using gunicorn when the container launches
-CMD ["sh", "-c", "gunicorn --access-logfile - -b 0.0.0.0:${SERVER_PORT} app:app"]
+CMD ["sh", "-c", "gunicorn -b 0.0.0.0:${SERVER_PORT} app:app"]
