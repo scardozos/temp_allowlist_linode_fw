@@ -4,7 +4,7 @@ import logging
 import os
 import time
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 # Configure environment variables before importing app
 os.environ["TESTING"] = "true"
@@ -337,6 +337,183 @@ class TestTempAllowlistApp(unittest.TestCase):
         self.assertEqual(slow_logs[0]["logLevel"], "WARNING")
         self.assertEqual(slow_logs[0]["operation"], "simulated_slow_op")
         self.assertGreater(slow_logs[0]["duration_ms"], 100.0)
+
+    def test_cleanup_with_expired_rules_suppressed_at_info_level(self):
+        """Verify that cleanup with expired rules emits no logs at INFO level."""
+        self.root_logger.setLevel(logging.INFO)
+        mock_firewall = MagicMock()
+        expired_rule = MagicMock()
+        expired_rule.label = "tmpAllowList_1000"
+        expired_rule.action = "ACCEPT"
+        expired_rule.protocol = "TCP"
+        expired_rule.ports = "80, 443"
+        expired_rule.addresses.ipv4 = ["1.2.3.4/32"]
+        expired_rule.addresses.ipv6 = []
+        expired_rule.description = "Expired rule"
+
+        mock_firewall.rules.inbound = [expired_rule]
+        mock_firewall.rules.outbound = []
+        mock_firewall.rules.inbound_policy = "DROP"
+        mock_firewall.rules.outbound_policy = "ACCEPT"
+
+        deleted = app.delete_temporary_firewall_rule(mock_firewall)
+        self.assertEqual(deleted, 1)
+
+        logs = self.get_json_logs()
+        # All cleanup logs should be DEBUG, so at INFO level there should be 0 logs
+        self.assertEqual(len(logs), 0)
+
+    def test_cleanup_with_expired_rules_emitted_at_debug_level(self):
+        """Verify that successful cleanup emits DEBUG logs when log level is DEBUG."""
+        self.root_logger.setLevel(logging.DEBUG)
+        mock_firewall = MagicMock()
+        expired_rule = MagicMock()
+        expired_rule.label = "tmpAllowList_1000"
+        expired_rule.action = "ACCEPT"
+        expired_rule.protocol = "TCP"
+        expired_rule.ports = "80, 443"
+        expired_rule.addresses.ipv4 = ["1.2.3.4/32"]
+        expired_rule.addresses.ipv6 = []
+        expired_rule.description = "Expired rule"
+
+        mock_firewall.rules.inbound = [expired_rule]
+        mock_firewall.rules.outbound = []
+        mock_firewall.rules.inbound_policy = "DROP"
+        mock_firewall.rules.outbound_policy = "ACCEPT"
+
+        deleted = app.delete_temporary_firewall_rule(mock_firewall)
+        self.assertEqual(deleted, 1)
+
+        logs = self.get_json_logs()
+        cleanup_logs = [
+            entry
+            for entry in logs
+            if "Cleaned up expired firewall rules" in entry.get("message", "")
+        ]
+        self.assertEqual(len(cleanup_logs), 1)
+        self.assertEqual(cleanup_logs[0]["logLevel"], "DEBUG")
+        self.assertEqual(cleanup_logs[0]["deleted_count"], 1)
+
+    def test_cleanup_failure_logged_at_error_level(self):
+        """Verify that firewall cleanup failures emit an ERROR log entry."""
+        self.root_logger.setLevel(logging.INFO)
+        mock_firewall = MagicMock()
+        # Simulate an API error when reading rules via PropertyMock
+        type(mock_firewall).rules = PropertyMock(
+            side_effect=RuntimeError("Linode API down")
+        )
+
+        deleted = app.delete_temporary_firewall_rule(mock_firewall)
+        self.assertEqual(deleted, 0)
+
+        logs = self.get_json_logs()
+        error_logs = [
+            entry
+            for entry in logs
+            if "Failed to clean up expired firewall rules" in entry.get("message", "")
+        ]
+        self.assertEqual(len(error_logs), 1)
+        self.assertEqual(error_logs[0]["logLevel"], "ERROR")
+        self.assertIn("Linode API down", error_logs[0]["message"])
+
+    def test_gunicorn_error_structured_json_logging(self):
+        """Verify that gunicorn.error logger outputs structured JSON."""
+        # Set up a stream handler on gunicorn.error with CustomJsonFormatter
+        stream = io.StringIO()
+        formatter = app.CustomJsonFormatter(
+            fmt="%(asctime)s %(levelname)s %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%SZ",
+        )
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(formatter)
+
+        gunicorn_logger = logging.getLogger("gunicorn.error")
+        gunicorn_logger.handlers = [handler]
+        gunicorn_logger.setLevel(logging.INFO)
+        gunicorn_logger.propagate = False
+
+        # Log the exact invalid request line warning seen in production
+        gunicorn_logger.warning(
+            "Invalid request from ip=%s: %s",
+            "66.132.172.138",
+            "Invalid HTTP request line: 'PRI * HTTP/2.0'",
+        )
+
+        output = stream.getvalue().strip()
+        parsed = json.loads(output)
+
+        expected_msg = (
+            "Invalid request from ip=66.132.172.138: "
+            "Invalid HTTP request line: 'PRI * HTTP/2.0'"
+        )
+        self.assertEqual(parsed["message"], expected_msg)
+        self.assertEqual(parsed["logLevel"], "WARNING")
+        self.assertIn("timestamp", parsed)
+
+    def test_gunicorn_json_logger_class_setup(self):
+        """Verify that GunicornJsonLogger configures CustomJsonFormatter."""
+        import gunicorn.config
+
+        from temp_allowlist_linode_fw.logging import GunicornJsonLogger
+
+        cfg = gunicorn.config.Config()
+        glog = GunicornJsonLogger(cfg)
+        glog.setup(cfg)
+
+        stream = io.StringIO()
+        for h in glog.error_log.handlers:
+            self.assertIsInstance(h.formatter, app.CustomJsonFormatter)
+            # Test emission
+            h.setStream(stream)
+
+        glog.warning("Test gunicorn warning message")
+        first_line = stream.getvalue().strip().splitlines()[0]
+        self.assertTrue(first_line.startswith("{") and first_line.endswith("}"))
+        parsed = json.loads(first_line)
+        self.assertEqual(parsed["message"], "Test gunicorn warning message")
+        self.assertEqual(parsed["logLevel"], "WARNING")
+
+    def test_package_exports(self):
+        """Verify that temp_allowlist_linode_fw re-exports all core components."""
+        import temp_allowlist_linode_fw as pkg
+
+        expected_symbols = [
+            "Config",
+            "CustomJsonFormatter",
+            "GunicornJsonLogger",
+            "app",
+            "build_updated_rules",
+            "create_app",
+            "create_temporary_firewall_rule",
+            "delete_temporary_firewall_rule",
+            "firewall_lock",
+            "gen_firewall_rule",
+            "gen_firewall_rule_name",
+            "get_linode_client",
+            "is_rule_expired",
+            "is_temporary_rule_for_ip",
+            "logger",
+            "measure_operation",
+            "periodic_cleanup_loop",
+            "record_timing",
+            "rule_to_dict",
+            "setup_logging",
+            "start_periodic_cleanup",
+        ]
+        for sym in expected_symbols:
+            self.assertTrue(
+                hasattr(pkg, sym), f"Package missing expected export: {sym}"
+            )
+
+    def test_package_create_app_factory(self):
+        """Verify that create_app() produces a configured Flask application."""
+        from temp_allowlist_linode_fw.app import create_app
+
+        custom_app = create_app()
+        self.assertIsNotNone(custom_app)
+        client = custom_app.test_client()
+        resp = client.get("/nonexistent")
+        self.assertEqual(resp.status_code, 404)
 
 
 if __name__ == "__main__":

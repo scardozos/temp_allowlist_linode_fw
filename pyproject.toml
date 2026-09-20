@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "temp_allowlist_linode"
-version = "v0.6"
+version = "v0.7"
 requires-python = ">=3.11"
 description = "Create temporary allowlist for Linode Firewall"
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -14,6 +14,10 @@ dependencies = ['flask', 'linode_api4', 'python-json-logger']
 
 [project.urls]
 homepage = "https://github.com/scardozos/temp_allowlist_linode_fw"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["temp_allowlist_linode_fw*"]
 
 [tool.ruff]
 preview = true

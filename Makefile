@@ -1,4 +1,9 @@
-.PHONY: build push check-env
+PYTHON ?= $(shell if [ -f .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi)
+
+.PHONY: build push check-env test
+
+test:
+	$(PYTHON) -m unittest discover -s tests
 
 build:
 	@echo "Building image..."

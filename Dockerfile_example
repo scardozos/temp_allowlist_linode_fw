@@ -22,4 +22,4 @@ ENV LOG_LEVEL="INFO"
 
 
 # Run app.py using gunicorn when the container launches
-CMD ["sh", "-c", "gunicorn -b 0.0.0.0:${SERVER_PORT} app:app"]
+CMD ["sh", "-c", "gunicorn -c temp_allowlist_linode_fw/gunicorn_conf.py -b 0.0.0.0:${SERVER_PORT} app:app"]
