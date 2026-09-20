@@ -1,4 +1,22 @@
 #!/bin/bash
+# ==============================================================================
+# Script: deploy_to_remote_host.sh
+#
+# Description:
+#   Exports the locally built Docker image for temp_allowlist_linode_fw,
+#   transfers it to the target remote host using rsync over SSH, and triggers
+#   the remote container reload via scripts/remote_load_and_run_container.sh.
+#
+# Expected Arguments:
+#   $1 - IP_ADDRESS   : IPv4 address of target remote host (e.g. 172.233.115.22)
+#   $2 - SSHKEY_PATH  : Path to private SSH key (e.g. ~/.ssh/id_ed25519)
+#   $3 - SERVER_PORT  : Exposed server port for container (e.g. 8080)
+#
+# Example Usage:
+#   ./scripts/deploy_to_remote_host.sh 172.233.115.22 ~/.ssh/id_ed25519 8080
+#   make push HOST_IP=172.233.115.22 SSH_KEY=~/.ssh/id_ed25519 PORT=8080
+# ==============================================================================
+
 # Function to replace all '.' with 'dot' in a given string
 replace_dot() {
     local input="$1"
@@ -47,7 +65,7 @@ fi
 
 # Check if the third argument is provided
 if [ -z "$3" ]; then
-    echo "Error: Server Port is required as the first argument."
+    echo "Error: Server Port is required as the third argument."
     exit 1
 fi
 
@@ -68,4 +86,4 @@ sudo rsync -avz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/n
 echo "Removing local file ./$IMAGE_FILENAME"
 sudo rm "$IMAGE_FILENAME"
 
-ssh $_OPTS sudo bash -s -- < scripts/deploy_img_in_host.sh "$IMAGE_FILENAME" "$PROJECT_VERSION" "$SERVER_PORT"
+ssh $_OPTS sudo bash -s -- < scripts/remote_load_and_run_container.sh "$IMAGE_FILENAME" "$PROJECT_VERSION" "$SERVER_PORT"

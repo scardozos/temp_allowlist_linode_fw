@@ -1,5 +1,24 @@
 #!/bin/bash
+# ==============================================================================
+# Script: remote_load_and_run_container.sh
+#
+# Description:
+#   Runs on the remote destination host (streamed via SSH from
+#   deploy_to_remote_host.sh). Loads the transferred Docker image archive,
+#   stops/removes any existing temp_allowlist_linode_fw container, and launches
+#   the newly updated container.
+#
+# Expected Arguments:
+#   $1 - IMAGE_FILENAME : Transferred Docker image archive file (e.g. temp_allowlist_linode_fw_image_v0dot4)
+#   $2 - VERSION_ID     : Docker image version tag (e.g. v0.4)
+#   $3 - SERVER_PORT    : Host/container port to bind (e.g. 8080)
+#
+# Example Usage:
+#   ./scripts/remote_load_and_run_container.sh temp_allowlist_linode_fw_image_v0dot4 v0.4 8080
+#   ssh -i ~/.ssh/id_ed25519 root@<IP> sudo bash -s -- < scripts/remote_load_and_run_container.sh image_name v0.4 8080
+# ==============================================================================
 set -o nounset
+
 # Check if the first argument is provided
 if [ -z "$1" ]; then
     echo "Error: Image filename is required as the first argument."
@@ -8,13 +27,13 @@ fi
 
 # Check if the second argument is provided
 if [ -z "$2" ]; then
-    echo "Error: Version ID is required as the first argument."
+    echo "Error: Version ID is required as the second argument."
     exit 1
 fi
 
 # Check if the third argument is provided
 if [ -z "$3" ]; then
-    echo "Error: Server Port is required as the first argument."
+    echo "Error: Server Port is required as the third argument."
     exit 1
 fi
 

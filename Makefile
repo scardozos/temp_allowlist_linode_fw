@@ -17,4 +17,4 @@ endif
 
 push: check-env build
 	@echo "Deploying to host $(HOST_IP)..."
-	./scripts/deploy_image_to_host.sh $(HOST_IP) $(SSH_KEY) $(PORT)
+	./scripts/deploy_to_remote_host.sh $(HOST_IP) $(SSH_KEY) $(PORT)
