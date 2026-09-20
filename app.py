@@ -219,24 +219,29 @@ def delete_temporary_firewall_rule(
         current_ts = int(datetime.now().timestamp())
 
         new_inbound_rules = []
-        any_deleted = False
+        deleted_count = 0
 
         for rule_obj in current_rules.inbound:
             rule = rule_to_dict(rule_obj)
             if is_rule_expired(rule, current_ts, allowlist_interval_seconds):
                 logger.info(f"Deleting expired rule: {rule.get('label')}")
-                any_deleted = True
+                deleted_count += 1
             else:
                 new_inbound_rules.append(rule)
 
-        if any_deleted:
+        if deleted_count > 0:
             new_rules = build_updated_rules(current_rules, new_inbound_rules)
             firewall.update_rules(
                 rules=new_rules,
             )
-            logger.info("Cleaned up expired firewall rules")
+            logger.info(
+                "Cleaned up expired firewall rules",
+                extra={"deleted_count": deleted_count},
+            )
         else:
             logger.debug("No expired firewall rules to clean up")
+
+        return deleted_count
 
 
 def rule_to_dict(rule):
@@ -317,11 +322,15 @@ def create_temporary_firewall_rule(
 
 
 def periodic_cleanup_loop():
-    logger.info("Starting periodic firewall cleanup thread...")
+    logger.debug("Starting periodic firewall cleanup thread...")
     while True:
         try:
             firewall = Firewall(client, firewall_id)
-            delete_temporary_firewall_rule(firewall)
+            deleted_count = delete_temporary_firewall_rule(firewall)
+            logger.info(
+                "Completed periodic firewall cleanup thread",
+                extra={"deleted_count": deleted_count},
+            )
         except Exception:
             logger.exception("Error in periodic firewall cleanup")
         time.sleep(300)  # check every 5 minutes
