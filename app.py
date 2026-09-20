@@ -59,6 +59,9 @@ def setup_logging():
 logger = setup_logging()
 
 
+SLOW_OP_THRESHOLD_MS = float(os.environ.get("SLOW_OP_THRESHOLD_MS", "2000.0"))
+
+
 def record_timing(op_name: str, duration_ms: float):
     if has_request_context() and hasattr(g, "timings") and isinstance(g.timings, dict):
         g.timings[op_name] = round(duration_ms, 2)
@@ -72,6 +75,12 @@ def measure_operation(op_name: str):
     finally:
         elapsed = (time.perf_counter() - start) * 1000
         record_timing(op_name, elapsed)
+        if elapsed > SLOW_OP_THRESHOLD_MS:
+            logger.warning(
+                f"Slow operation detected: {op_name} took {elapsed:.2f} ms "
+                "(possible upstream rate limiting or API latency)",
+                extra={"operation": op_name, "duration_ms": round(elapsed, 2)},
+            )
 
 
 # Initialize Flask application
@@ -197,6 +206,17 @@ def is_rule_expired(
         return False
 
 
+def is_temporary_rule_for_ip(rule: dict, ip_address: str) -> bool:
+    """Check if the rule is an existing temporary allowlist rule for the IP."""
+    if not rule.get("label", "").startswith("tmpAllowList_"):
+        return False
+
+    addresses = rule.get("addresses", {})
+    ipv4_list = addresses.get("ipv4", [])
+    target = f"{ip_address}/32"
+    return target in ipv4_list
+
+
 def build_updated_rules(
     current_rules,
     new_inbound_rules: list,
@@ -273,8 +293,7 @@ def create_temporary_firewall_rule(
     firewall: Firewall,
     allowlist_interval_seconds: int,
 ):
-    # Create a temporary firewall rule,
-    # then schedule its deletion after the allowlist interval
+    """Create or rotate a temporary firewall rule for the specified IP address."""
     lock_start = time.perf_counter()
     with firewall_lock:
         record_timing("acquire_lock_ms", (time.perf_counter() - lock_start) * 1000)
@@ -285,6 +304,7 @@ def create_temporary_firewall_rule(
         current_ts = int(datetime.now().timestamp())
 
         # Convert existing inbound rules to dicts, filtering out expired ones
+        # and rotating any existing temporary rules for this IP address
         with measure_operation("process_rules_ms"):
             inbound_rules = []
             for rule_obj in current_rules.inbound:
@@ -293,10 +313,15 @@ def create_temporary_firewall_rule(
                     logger.info(
                         f"Cleaning up expired rule on creation: {rule.get('label')}"
                     )
+                elif is_temporary_rule_for_ip(rule, ip_address):
+                    logger.info(
+                        f"Rotating existing temporary rule for {ip_address}: "
+                        f"{rule.get('label')}"
+                    )
                 else:
                     inbound_rules.append(rule)
 
-            # Append the new rule
+            # Append the fresh temporary rule for this IP
             inbound_rules.append(gen_firewall_rule(ip_address))
 
             new_rules = build_updated_rules(current_rules, inbound_rules)
@@ -338,11 +363,17 @@ def periodic_cleanup_loop():
 
 def start_periodic_cleanup():
     global cleanup_started
+    if os.environ.get("TESTING", "").lower() in ("1", "true"):
+        return
     with cleanup_lock:
         if not cleanup_started:
             thread = threading.Thread(target=periodic_cleanup_loop, daemon=True)
             thread.start()
             cleanup_started = True
+
+
+# Auto-start cleanup thread on application load
+start_periodic_cleanup()
 
 
 if __name__ == "__main__":
