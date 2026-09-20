@@ -314,10 +314,24 @@ def create_temporary_firewall_rule(
                         f"Cleaning up expired rule on creation: {rule.get('label')}"
                     )
                 elif is_temporary_rule_for_ip(rule, ip_address):
-                    logger.info(
-                        f"Rotating existing temporary rule for {ip_address}: "
-                        f"{rule.get('label')}"
-                    )
+                    ipv4_list = rule.get("addresses", {}).get("ipv4", [])
+                    rule_ips_str = ", ".join(ipv4_list)
+                    target = f"{ip_address}/32"
+
+                    if len(ipv4_list) > 1:
+                        rule["addresses"]["ipv4"].remove(target)
+                        inbound_rules.append(rule)
+                        logger.info(
+                            f"Removed {ip_address} from shared temporary rule "
+                            f"(remaining: {', '.join(rule['addresses']['ipv4'])}): "
+                            f"{rule.get('label')}"
+                        )
+                    else:
+                        logger.info(
+                            "Rotating existing temporary rule "
+                            f"(contained {rule_ips_str}) "
+                            f"for {ip_address}: {rule.get('label')}"
+                        )
                 else:
                     inbound_rules.append(rule)
 

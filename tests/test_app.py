@@ -160,9 +160,7 @@ class TestTempAllowlistApp(unittest.TestCase):
 
     @patch("app.Firewall")
     @patch("threading.Timer")
-    def test_ip_rule_rotation_deduplication(
-        self, mock_timer, mock_firewall_cls
-    ):
+    def test_ip_rule_rotation_deduplication(self, mock_timer, mock_firewall_cls):
         """Verify that existing temporary rules for the client IP are rotated."""
         self.root_logger.setLevel(logging.INFO)
         recent_ts = int(time.time()) - 30
@@ -218,16 +216,70 @@ class TestTempAllowlistApp(unittest.TestCase):
         rotation_logs = [
             entry
             for entry in logs
-            if "Rotating existing temporary rule for 127.0.0.1"
+            if "Rotating existing temporary rule (contained 127.0.0.1/32) for 127.0.0.1"
             in entry.get("message", "")
         ]
         self.assertEqual(len(rotation_logs), 1)
 
     @patch("app.Firewall")
     @patch("threading.Timer")
-    def test_expired_rules_cleaned_up_on_creation(
-        self, mock_timer, mock_firewall_cls
-    ):
+    def test_ip_shared_rule_rotation_deduplication(self, mock_timer, mock_firewall_cls):
+        """Verify that shared temporary rules gracefully remove the target IP."""
+        self.root_logger.setLevel(logging.INFO)
+        recent_ts = int(time.time()) - 30
+
+        # Create an existing active rule shared with another IP
+        existing_rule = MagicMock()
+        existing_rule.label = f"tmpAllowList_{recent_ts}"
+        existing_rule.action = "ACCEPT"
+        existing_rule.protocol = "TCP"
+        existing_rule.ports = "80, 443"
+        existing_rule.addresses.ipv4 = ["10.0.0.1/32", "127.0.0.1/32"]
+        existing_rule.addresses.ipv6 = []
+        existing_rule.description = "Shared rule"
+
+        mock_instance = MagicMock()
+        mock_instance.rules.inbound = [existing_rule]
+        mock_instance.rules.outbound = []
+        mock_instance.rules.inbound_policy = "DROP"
+        mock_instance.rules.outbound_policy = "ACCEPT"
+        mock_firewall_cls.return_value = mock_instance
+
+        response = self.client.get("/getaccess")
+        self.assertEqual(response.status_code, 200)
+
+        # Check update_rules payload
+        mock_instance.update_rules.assert_called_once()
+        call_kwargs = mock_instance.update_rules.call_args.kwargs
+        updated_inbound = call_kwargs["rules"]["inbound"]
+
+        # Ensure the shared rule was modified (127.0.0.1 removed)
+        # and a new fresh rule for 127.0.0.1 was appended.
+        self.assertEqual(len(updated_inbound), 2)
+
+        shared_rule = next(
+            r for r in updated_inbound if r.get("label") == f"tmpAllowList_{recent_ts}"
+        )
+        self.assertEqual(shared_rule["addresses"]["ipv4"], ["10.0.0.1/32"])
+
+        fresh_rule = next(
+            r for r in updated_inbound if r.get("label") != f"tmpAllowList_{recent_ts}"
+        )
+        self.assertEqual(fresh_rule["addresses"]["ipv4"], ["127.0.0.1/32"])
+
+        # Verify removal log was emitted
+        logs = self.get_json_logs()
+        removal_logs = [
+            entry
+            for entry in logs
+            if "Removed 127.0.0.1 from shared temporary rule"
+            in entry.get("message", "")
+        ]
+        self.assertEqual(len(removal_logs), 1)
+
+    @patch("app.Firewall")
+    @patch("threading.Timer")
+    def test_expired_rules_cleaned_up_on_creation(self, mock_timer, mock_firewall_cls):
         """Verify that expired temporary rules are pruned when a new rule is created."""
         self.root_logger.setLevel(logging.INFO)
 
@@ -279,8 +331,7 @@ class TestTempAllowlistApp(unittest.TestCase):
         slow_logs = [
             entry
             for entry in logs
-            if "Slow operation detected: simulated_slow_op"
-            in entry.get("message", "")
+            if "Slow operation detected: simulated_slow_op" in entry.get("message", "")
         ]
         self.assertEqual(len(slow_logs), 1)
         self.assertEqual(slow_logs[0]["logLevel"], "WARNING")
