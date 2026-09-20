@@ -14,7 +14,13 @@ os.environ["SERVER_PORT"] = "8080"
 os.environ["FIREWALL_ID"] = "12345"
 os.environ["SLOW_OP_THRESHOLD_MS"] = "100.0"
 
-import app
+from temp_allowlist_linode_fw import (
+    CustomJsonFormatter,
+    app,
+    delete_temporary_firewall_rule,
+    logger,
+    measure_operation,
+)
 
 
 class TestTempAllowlistApp(unittest.TestCase):
@@ -23,14 +29,14 @@ class TestTempAllowlistApp(unittest.TestCase):
         self.log_stream = io.StringIO()
         self.handler = logging.StreamHandler(self.log_stream)
         self.handler.setFormatter(
-            app.CustomJsonFormatter(
+            CustomJsonFormatter(
                 fmt="%(asctime)s %(levelname)s %(message)s",
                 datefmt="%Y-%m-%dT%H:%M:%SZ",
             )
         )
         self.root_logger = logging.getLogger()
         self.root_logger.handlers = [self.handler]
-        self.client = app.app.test_client()
+        self.client = app.test_client()
 
     def get_json_logs(self):
         output = self.log_stream.getvalue().strip()
@@ -48,7 +54,7 @@ class TestTempAllowlistApp(unittest.TestCase):
 
     def test_json_log_structure_without_caller(self):
         self.root_logger.setLevel(logging.INFO)
-        app.logger.info("Test message", extra={"custom_metric": 42})
+        logger.info("Test message", extra={"custom_metric": 42})
 
         logs = self.get_json_logs()
         self.assertEqual(len(logs), 1)
@@ -70,7 +76,7 @@ class TestTempAllowlistApp(unittest.TestCase):
         mock_firewall.rules.inbound = []
         mock_firewall.rules.outbound = []
 
-        app.delete_temporary_firewall_rule(mock_firewall)
+        delete_temporary_firewall_rule(mock_firewall)
 
         logs = self.get_json_logs()
         debug_logs = [
@@ -86,7 +92,7 @@ class TestTempAllowlistApp(unittest.TestCase):
         mock_firewall.rules.inbound = []
         mock_firewall.rules.outbound = []
 
-        app.delete_temporary_firewall_rule(mock_firewall)
+        delete_temporary_firewall_rule(mock_firewall)
 
         logs = self.get_json_logs()
         debug_logs = [
@@ -121,7 +127,7 @@ class TestTempAllowlistApp(unittest.TestCase):
         self.assertEqual(access_logs[0]["logLevel"], "DEBUG")
         self.assertEqual(access_logs[0]["status_code"], 404)
 
-    @patch("app.Firewall")
+    @patch("temp_allowlist_linode_fw.app.Firewall")
     @patch("threading.Timer")
     def test_access_log_and_operation_timings_for_getaccess(
         self, mock_timer, mock_firewall_cls
@@ -158,7 +164,7 @@ class TestTempAllowlistApp(unittest.TestCase):
         self.assertIn("update_firewall_rules_ms", ops)
         self.assertIn("schedule_timer_ms", ops)
 
-    @patch("app.Firewall")
+    @patch("temp_allowlist_linode_fw.app.Firewall")
     @patch("threading.Timer")
     def test_ip_rule_rotation_deduplication(self, mock_timer, mock_firewall_cls):
         """Verify that existing temporary rules for the client IP are rotated."""
@@ -221,7 +227,7 @@ class TestTempAllowlistApp(unittest.TestCase):
         ]
         self.assertEqual(len(rotation_logs), 1)
 
-    @patch("app.Firewall")
+    @patch("temp_allowlist_linode_fw.app.Firewall")
     @patch("threading.Timer")
     def test_ip_shared_rule_rotation_deduplication(self, mock_timer, mock_firewall_cls):
         """Verify that shared temporary rules gracefully remove the target IP."""
@@ -277,7 +283,7 @@ class TestTempAllowlistApp(unittest.TestCase):
         ]
         self.assertEqual(len(removal_logs), 1)
 
-    @patch("app.Firewall")
+    @patch("temp_allowlist_linode_fw.app.Firewall")
     @patch("threading.Timer")
     def test_expired_rules_cleaned_up_on_creation(self, mock_timer, mock_firewall_cls):
         """Verify that expired temporary rules are pruned when a new rule is created."""
@@ -324,7 +330,7 @@ class TestTempAllowlistApp(unittest.TestCase):
         """Verify that operations exceeding threshold emit a structured warning."""
         self.root_logger.setLevel(logging.INFO)
 
-        with app.measure_operation("simulated_slow_op"):
+        with measure_operation("simulated_slow_op"):
             time.sleep(0.12)  # Exceeds SLOW_OP_THRESHOLD_MS = 100.0 ms
 
         logs = self.get_json_logs()
@@ -356,7 +362,7 @@ class TestTempAllowlistApp(unittest.TestCase):
         mock_firewall.rules.inbound_policy = "DROP"
         mock_firewall.rules.outbound_policy = "ACCEPT"
 
-        deleted = app.delete_temporary_firewall_rule(mock_firewall)
+        deleted = delete_temporary_firewall_rule(mock_firewall)
         self.assertEqual(deleted, 1)
 
         logs = self.get_json_logs()
@@ -381,7 +387,7 @@ class TestTempAllowlistApp(unittest.TestCase):
         mock_firewall.rules.inbound_policy = "DROP"
         mock_firewall.rules.outbound_policy = "ACCEPT"
 
-        deleted = app.delete_temporary_firewall_rule(mock_firewall)
+        deleted = delete_temporary_firewall_rule(mock_firewall)
         self.assertEqual(deleted, 1)
 
         logs = self.get_json_logs()
@@ -403,7 +409,7 @@ class TestTempAllowlistApp(unittest.TestCase):
             side_effect=RuntimeError("Linode API down")
         )
 
-        deleted = app.delete_temporary_firewall_rule(mock_firewall)
+        deleted = delete_temporary_firewall_rule(mock_firewall)
         self.assertEqual(deleted, 0)
 
         logs = self.get_json_logs()
@@ -420,7 +426,7 @@ class TestTempAllowlistApp(unittest.TestCase):
         """Verify that gunicorn.error logger outputs structured JSON."""
         # Set up a stream handler on gunicorn.error with CustomJsonFormatter
         stream = io.StringIO()
-        formatter = app.CustomJsonFormatter(
+        formatter = CustomJsonFormatter(
             fmt="%(asctime)s %(levelname)s %(message)s",
             datefmt="%Y-%m-%dT%H:%M:%SZ",
         )
@@ -462,7 +468,7 @@ class TestTempAllowlistApp(unittest.TestCase):
 
         stream = io.StringIO()
         for h in glog.error_log.handlers:
-            self.assertIsInstance(h.formatter, app.CustomJsonFormatter)
+            self.assertIsInstance(h.formatter, CustomJsonFormatter)
             # Test emission
             h.setStream(stream)
 
