@@ -40,7 +40,7 @@ The script requires three arguments to be provided:
 ### Example Usage
 
 ```bash
-./scripts/deploy_img_in_host.sh 192.168.1.100 /path/to/ssh/key 8080
+./scripts/deploy_to_remote_host.sh 192.168.1.100 /path/to/ssh/key 8080
 ```
 
 ## Makefile Usage

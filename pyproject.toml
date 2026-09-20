@@ -4,16 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "temp_allowlist_linode"
-version = "v0.4"
+version = "v0.5"
 requires-python = ">=3.11"
 description = "Create temporary allowlist for Linode Firewall"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = { file = "LICENSE" }
 authors = [{ name = "scardozos" }]
-dependencies = [
-    'flask',
-    'linode_api4'
-]
+dependencies = ['flask', 'linode_api4', 'python-json-logger']
 
 [project.urls]
 homepage = "https://github.com/scardozos/temp_allowlist_linode_fw"
@@ -24,10 +21,10 @@ preview = true
 [tool.ruff.lint]
 # https://docs.astral.sh/ruff/rules/
 extend-select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "I",  # isort
-    "N"   # pep8-naming
+    "E", # pycodestyle errors
+    "W", # pycodestyle warnings
+    "I", # isort
+    "N", # pep8-naming
 ]
 
 [tool.flake8]
