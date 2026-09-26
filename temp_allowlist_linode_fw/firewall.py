@@ -14,6 +14,7 @@ from temp_allowlist_linode_fw.logging import (
 
 # Concurrency lock for firewall modifications
 firewall_lock = threading.Lock()
+_last_cleanup_failed_due_to_api = False
 
 
 def get_linode_client(token: str | None = None) -> LinodeClient:
@@ -130,6 +131,8 @@ def delete_temporary_firewall_rule(
     allowlist_interval_seconds: int | None = None,
 ) -> int:
     """Delete expired temporary firewall rules. Emits DEBUG logs and catches errors."""
+    global _last_cleanup_failed_due_to_api
+    
     if allowlist_interval_seconds is None:
         allowlist_interval_seconds = Config.ALLOWLIST_INTERVAL_SECONDS
 
@@ -159,13 +162,27 @@ def delete_temporary_firewall_rule(
             else:
                 logger.debug("No expired firewall rules to clean up")
 
+            if _last_cleanup_failed_due_to_api:
+                logger.info("Firewall cleanup successful after previous transient API failure")
+                _last_cleanup_failed_due_to_api = False
+
             return deleted_count
         except Exception as e:  # noqa: BLE001
-            logger.error(
-                f"Failed to clean up expired firewall rules: {e}",
-                exc_info=True,
-                extra={"error": str(e)},
-            )
+            from linode_api4.errors import ApiError
+            
+            is_5xx = isinstance(e, ApiError) and getattr(e, "status", 0) >= 500
+            if is_5xx:
+                _last_cleanup_failed_due_to_api = True
+                logger.warning(
+                    f"Transient API error during firewall cleanup (will retry next cycle): {e}",
+                    extra={"error": str(e)},
+                )
+            else:
+                logger.error(
+                    f"Failed to clean up expired firewall rules: {e}",
+                    exc_info=True,
+                    extra={"error": str(e)},
+                )
             return 0
 
 

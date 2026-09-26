@@ -10,6 +10,16 @@ from pythonjsonlogger import jsonlogger
 from temp_allowlist_linode_fw.config import Config
 
 
+class InvalidRequestFilter(logging.Filter):
+    """Filter to suppress 'Invalid request from ip=' from Gunicorn unless in DEBUG."""
+
+    def filter(self, record):
+        if record.getMessage().startswith("Invalid request from ip="):
+            return logging.getLogger().isEnabledFor(logging.DEBUG)
+        return True
+
+
+
 class CustomJsonFormatter(jsonlogger.JsonFormatter):
     """Custom JSON formatter producing structured log entries."""
 
@@ -62,7 +72,7 @@ def setup_logging(log_level_name: str | None = None):
 
     # Silence noisy 3rd party loggers unless at DEBUG level
     if log_level > logging.DEBUG:
-        logging.getLogger("urllib3").setLevel(logging.WARNING)
+        logging.getLogger("urllib3").setLevel(logging.ERROR)
         logging.getLogger("werkzeug").setLevel(logging.WARNING)
     else:
         logging.getLogger("werkzeug").setLevel(logging.INFO)
@@ -83,6 +93,7 @@ def setup_logging(log_level_name: str | None = None):
                 h.setStream(sys.stdout)
     else:
         gunicorn_error.addHandler(handler)
+    gunicorn_error.addFilter(InvalidRequestFilter())
 
     return logging.getLogger("temp_allowlist_linode")
 
