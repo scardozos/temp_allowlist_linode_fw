@@ -13,6 +13,9 @@ class Config:
     SERVER_PORT = int(os.environ.get("SERVER_PORT", "8080"))
     LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
     SLOW_OP_THRESHOLD_MS = float(os.environ.get("SLOW_OP_THRESHOLD_MS", "2000.0"))
+    CLIENT_READ_TIMEOUT_SECONDS = float(
+        os.environ.get("CLIENT_READ_TIMEOUT_SECONDS", "10.0")
+    )
     TESTING = os.environ.get("TESTING", "").lower() in ("1", "true")
 
     @classmethod
@@ -28,5 +31,8 @@ class Config:
         cls.LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
         cls.SLOW_OP_THRESHOLD_MS = float(
             os.environ.get("SLOW_OP_THRESHOLD_MS", "2000.0")
+        )
+        cls.CLIENT_READ_TIMEOUT_SECONDS = float(
+            os.environ.get("CLIENT_READ_TIMEOUT_SECONDS", "10.0")
         )
         cls.TESTING = os.environ.get("TESTING", "").lower() in ("1", "true")

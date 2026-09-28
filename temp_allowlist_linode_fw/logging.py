@@ -19,6 +19,16 @@ class InvalidRequestFilter(logging.Filter):
         return True
 
 
+class ClientReadTimeoutFilter(logging.Filter):
+    """Filter to suppress Gunicorn tracebacks for stalled clients unless in DEBUG."""
+
+    def filter(self, record):
+        if record.getMessage() == "Socket error processing request." and (
+            record.exc_info and isinstance(record.exc_info[1], TimeoutError)
+        ):
+            return logging.getLogger().isEnabledFor(logging.DEBUG)
+        return True
+
 
 class CustomJsonFormatter(jsonlogger.JsonFormatter):
     """Custom JSON formatter producing structured log entries."""
@@ -94,6 +104,7 @@ def setup_logging(log_level_name: str | None = None):
     else:
         gunicorn_error.addHandler(handler)
     gunicorn_error.addFilter(InvalidRequestFilter())
+    gunicorn_error.addFilter(ClientReadTimeoutFilter())
 
     return logging.getLogger("temp_allowlist_linode")
 
