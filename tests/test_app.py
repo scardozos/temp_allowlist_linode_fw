@@ -438,6 +438,9 @@ class TestTempAllowlistApp(unittest.TestCase):
         gunicorn_logger.setLevel(logging.INFO)
         gunicorn_logger.propagate = False
 
+        # InvalidRequestFilter drops this message unless root is at DEBUG
+        self.root_logger.setLevel(logging.DEBUG)
+
         # Log the exact invalid request line warning seen in production
         gunicorn_logger.warning(
             "Invalid request from ip=%s: %s",
